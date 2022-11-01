@@ -130,29 +130,58 @@ lock_destroy(struct lock *lock)
 
 void
 lock_acquire(struct lock *lock)
-{
-	// Write this
+ {
+	// turn off interupts
+	int spl = splhigh();
+ 
+	// Check Deadlock
+	if (lock_do_i_hold(lock)) {
+		panic("lock %s at %p: Deadlock.\n", lock->name, lock);
+	}
 
-	(void)lock;  // suppress warning until code gets written
-}
+	while (lock->holder != NULL) {
+		thread_sleep(lock);
+	}
 
-void
-lock_release(struct lock *lock)
-{
-	// Write this
+	lock->holder = curthread;
+	splx(spl);
+ }
+ 
+ void
+ lock_release(struct lock *lock)
+ {
+	// turn off interrupt
+	int spl = splhigh();
 
-	(void)lock;  // suppress warning until code gets written
-}
+	// Check Deadlock
+	if (lock->holder != curthread) {
+		panic("lock %s at %p: Deadlock.\n", lock->name, lock);
+	}
 
-int
-lock_do_i_hold(struct lock *lock)
-{
-	// Write this
+	lock->holder = NULL;
+	thread_wakeup(lock);
 
-	(void)lock;  // suppress warning until code gets written
-
-	return 1;    // dummy until code gets written
-}
+	splx(spl);
+ }
+ 
+ int
+ lock_do_i_hold(struct lock *lock)
+ {
+	// turn off interrupts
+	int spl;
+	assert(lock != NULL);
+	int same;
+	spl = splhigh();
+	
+	// Check holder
+	if (lock->holder == curthread) {
+		same = 1;
+	} else {
+		same = 0;
+	}
+	splx(spl);
+	return same;    // dummy until code gets written
+ }
 
 ////////////////////////////////////////////////////////////
 //
@@ -192,25 +221,49 @@ cv_destroy(struct cv *cv)
 }
 
 void
-cv_wait(struct cv *cv, struct lock *lock)
-{
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
-}
+ cv_wait(struct cv *cv, struct lock *lock)
+ {
+	// interrupt
+	int spl;
+	assert(cv != NULL);
+	assert(lock != NULL);
+	spl = splhigh();
 
-void
-cv_signal(struct cv *cv, struct lock *lock)
-{
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
-}
+	lock_release(lock);
+	thread_sleep(cv);
+	lock_acquire(lock);
 
-void
-cv_broadcast(struct cv *cv, struct lock *lock)
-{
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
-}
+	splx(spl);
+ }
+ 
+ void
+ cv_signal(struct cv *cv, struct lock *lock)
+ {
+	int spl;
+	assert(cv != NULL);
+	assert(lock != NULL);
+	spl = splhigh();
+
+	if (lock->holder != curthread) {
+		panic("cv_signal error: cv %s at %p, lock %s at %p.\n", cv->name, cv, lock->name, lock);
+	}
+
+	thread_wakeone(cv);
+	splx(spl);
+ }
+ 
+ void
+ cv_broadcast(struct cv *cv, struct lock *lock)
+ {
+	int spl;
+	assert(cv != NULL);
+	assert(lock != NULL);
+	spl = splhigh();
+
+	if (lock->holder != curthread) {
+		panic("cv_signal error: cv %s at %p, lock %s at %p.\n", cv->name, cv, lock->name, lock);
+	}
+
+	thread_wakeup(cv);
+	splx(spl);
+ }
